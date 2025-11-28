@@ -46,7 +46,6 @@ type PullRequest struct {
 		Oid string `json:"oid"`
 	} `json:"mergeCommit"`
 	BaseRefName      string `json:"baseRefName"`
-	HeadRefName      string `json:"headRefName"`
 	IsDraft          bool   `json:"isDraft"`
 	State            string `json:"state"`            // e.g., "OPEN", "CLOSED", "MERGED"
 	Mergeable        string `json:"mergeable"`        // e.g., "MERGEABLE", "CONFLICTING", "UNKNOWN"
@@ -55,6 +54,7 @@ type PullRequest struct {
 	MergedBy         struct {
 		Login string `json:"login"`
 	} `json:"mergedBy"`
+	HeadRefName string `json:"headRefName"`
 
 	// Comment timing metrics (calculated fields)
 	FirstCommentTime      time.Time     `json:"-"` // Time of first comment
@@ -66,6 +66,10 @@ type PullRequest struct {
 	// Comment quantity metrics (calculated fields)
 	CommentCount       int `json:"-"` // Total number of comments on PR
 	ReviewCommentCount int `json:"-"` // Total number of review comments (code comments, excluding replies)
+
+	// Lifecycle metrics
+	IsReopened      bool      `json:"-"`
+	FirstReopenedAt time.Time `json:"-"`
 }
 
 // FetchPullRequests fetches pull requests from GitHub using gh pr list command with time-based parallel fetching.
@@ -312,6 +316,105 @@ func FetchPRCommentTiming(repo string, prs []PullRequest) []PullRequest {
 	time.Sleep(100 * time.Millisecond) // Brief pause before completion
 	fmt.Printf("✅ Comment timing analysis complete\n")
 	return prs
+}
+
+// FetchReopenEvents marks PRs that were reopened and captures the first reopened timestamp.
+func FetchReopenEvents(repo string, prs []PullRequest) []PullRequest {
+	parts := strings.Split(repo, "/")
+	if len(parts) != 2 {
+		return prs
+	}
+	owner, repoName := parts[0], parts[1]
+
+	// Only check merged/closed PRs to limit API calls
+	var targets []PullRequest
+	for _, pr := range prs {
+		if pr.State == "CLOSED" || pr.State == "MERGED" || pr.Merged {
+			targets = append(targets, pr)
+		}
+	}
+
+	if len(targets) == 0 {
+		return prs
+	}
+
+	fmt.Printf("🔍 Checking reopen events for %d PRs...\n", len(targets))
+
+	type result struct {
+		number int
+		time   time.Time
+	}
+
+	jobs := make(chan PullRequest, len(targets))
+	results := make(chan result, len(targets))
+	const workers = 4
+
+	for w := 0; w < workers; w++ {
+		go func() {
+			for pr := range jobs {
+				reopenedAt := fetchFirstReopenEvent(owner, repoName, pr.Number)
+				if !reopenedAt.IsZero() {
+					results <- result{number: pr.Number, time: reopenedAt}
+				} else {
+					results <- result{number: pr.Number}
+				}
+			}
+		}()
+	}
+
+	for _, pr := range targets {
+		jobs <- pr
+	}
+	close(jobs)
+
+	reopenTimes := make(map[int]time.Time, len(targets))
+	for i := 0; i < len(targets); i++ {
+		r := <-results
+		if !r.time.IsZero() {
+			reopenTimes[r.number] = r.time
+		}
+	}
+
+	for i := range prs {
+		if t, ok := reopenTimes[prs[i].Number]; ok {
+			prs[i].IsReopened = true
+			prs[i].FirstReopenedAt = t
+		}
+	}
+
+	return prs
+}
+
+// fetchFirstReopenEvent fetches the first "reopened" event for a PR using the issues events API.
+func fetchFirstReopenEvent(owner, repo string, number int) time.Time {
+	cmd := exec.Command("gh", "api", fmt.Sprintf("repos/%s/%s/issues/%d/events", owner, repo, number),
+		"--json", "event,created_at")
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		return time.Time{}
+	}
+
+	var events []struct {
+		Event     string    `json:"event"`
+		CreatedAt time.Time `json:"created_at"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &events); err != nil {
+		return time.Time{}
+	}
+
+	earliest := time.Time{}
+	for _, ev := range events {
+		if strings.EqualFold(ev.Event, "reopened") {
+			if earliest.IsZero() || ev.CreatedAt.Before(earliest) {
+				earliest = ev.CreatedAt
+			}
+		}
+	}
+	return earliest
 }
 
 // PRCommentTiming holds timing calculations for a single PR

@@ -9,27 +9,37 @@ import (
 
 // Stats holds the calculated statistics.
 type Stats struct {
-	AverageLeadTime        time.Duration
-	MedianLeadTime         time.Duration
-	MergedPRs              int
-	TotalPRs               int
-	AverageFilesChanged    float64
-	AverageAdditions       float64
-	AverageDeletions       float64
-	AverageReviewTime      time.Duration
-	AverageMergeWaitTime   time.Duration
-	MedianMergeWaitTime    time.Duration
-	AverageCommitToPRTime  time.Duration
-	AverageCommitsPerPR    float64
-	ForcePushRate          float64 // This might be hard to calculate accurately from current data
-	WIPPRCount             int
-	AverageReviewersPerPR  float64
-	SelfMergeRate          float64
-	MergeTypeTrend         map[string]float64 // squash, merge, rebase
-	CommitFrequencyPerWeek float64
-	ReleaseCount           int
-	AverageApprovalToMerge time.Duration
-	MedianApprovalToMerge  time.Duration
+	AverageLeadTime             time.Duration
+	MedianLeadTime              time.Duration
+	MergedPRs                   int
+	TotalPRs                    int
+	AverageFilesChanged         float64
+	AverageAdditions            float64
+	AverageDeletions            float64
+	AverageReviewTime           time.Duration
+	MedianReviewTime            time.Duration
+	AverageMergeWaitTime        time.Duration
+	MedianMergeWaitTime         time.Duration
+	AverageCommitToPRTime       time.Duration
+	AverageCommitsPerPR         float64
+	ForcePushRate               float64 // This might be hard to calculate accurately from current data
+	WIPPRCount                  int
+	AverageReviewersPerPR       float64
+	SelfMergeRate               float64
+	MergeTypeTrend              map[string]float64 // squash, merge, rebase
+	CommitFrequencyPerWeek      float64
+	ReleaseCount                int
+	AverageApprovalToMerge      time.Duration
+	MedianApprovalToMerge       time.Duration
+	ReopenedPRs                 int
+	ReopenRate                  float64
+	AverageReopenToMerge        time.Duration
+	MedianReopenToMerge         time.Duration
+	RevertLikeMerges            int
+	HotfixMerges                int
+	AverageHotfixAfterRelease   time.Duration
+	MedianHotfixAfterRelease    time.Duration
+	HotfixWithoutReleaseContext int
 
 	// Comment timing metrics
 	AverageTimeToFirstComment time.Duration
@@ -67,8 +77,10 @@ func CalculateStats(prs []github.PullRequest) Stats {
 	var totalMergeWaitTime time.Duration
 	var totalApprovalToMerge time.Duration
 	var reviewPRCount int
+	var reviewDurations []time.Duration
 	var mergeWaitDurations []time.Duration
 	var approvalToMergeDurations []time.Duration
+	var reopenToMergeDurations []time.Duration
 	var totalCommitToPRTime time.Duration
 	var totalCommits int
 	var validCommitToPRCount int
@@ -76,6 +88,16 @@ func CalculateStats(prs []github.PullRequest) Stats {
 	var selfMergedCount int
 	var approvalMergeCount int
 	mergeTypeCounts := make(map[string]int)
+	var reopenedPRs int
+	var revertLikeMerges int
+	var releaseMergeTimes []time.Time
+	var hotfixMerges int
+	var hotfixDurations []time.Duration
+	var hotfixWithoutRelease int
+	type hotfixRecord struct {
+		mergedAt time.Time
+	}
+	var hotfixRecords []hotfixRecord
 
 	var openPRs int
 	var earliestPRDate, latestPRDate time.Time
@@ -136,6 +158,7 @@ func CalculateStats(prs []github.PullRequest) Stats {
 			if reviewTime > 0 {
 				totalReviewTime += reviewTime
 				reviewPRCount++
+				reviewDurations = append(reviewDurations, reviewTime)
 			}
 		}
 
@@ -219,6 +242,18 @@ func CalculateStats(prs []github.PullRequest) Stats {
 		// Release count: merged into main/master
 		if pr.Merged && (strings.EqualFold(pr.BaseRefName, "main") || strings.EqualFold(pr.BaseRefName, "master")) {
 			releaseCount++
+			if !pr.MergedAt.IsZero() {
+				releaseMergeTimes = append(releaseMergeTimes, pr.MergedAt)
+			}
+		}
+
+		// Reopened metrics
+		if pr.IsReopened {
+			reopenedPRs++
+			if pr.Merged && !pr.FirstReopenedAt.IsZero() && pr.MergedAt.After(pr.FirstReopenedAt) {
+				duration := pr.MergedAt.Sub(pr.FirstReopenedAt)
+				reopenToMergeDurations = append(reopenToMergeDurations, duration)
+			}
 		}
 
 		// Merge Type Trend (Approximation based on merge commit presence and PR state)
@@ -231,6 +266,20 @@ func CalculateStats(prs []github.PullRequest) Stats {
 			} else {
 				// Could be rebase and merge, or other scenarios
 				mergeTypeCounts["rebase/other"]++
+			}
+
+			// Revert-like detection (title heuristic)
+			titleLower := strings.ToLower(pr.Title)
+			if strings.Contains(titleLower, "revert") {
+				revertLikeMerges++
+			}
+
+			// Hotfix detection (head branch prefix)
+			if strings.HasPrefix(strings.ToLower(pr.HeadRefName), "hotfix") {
+				hotfixMerges++
+				if !pr.MergedAt.IsZero() {
+					hotfixRecords = append(hotfixRecords, hotfixRecord{mergedAt: pr.MergedAt})
+				}
 			}
 		}
 
@@ -310,6 +359,16 @@ func CalculateStats(prs []github.PullRequest) Stats {
 	if reviewPRCount > 0 { // Average only across PRs that actually have review data and valid timestamps
 		avgReviewTime = totalReviewTime / time.Duration(reviewPRCount)
 	}
+	medianReviewTime := time.Duration(0)
+	if len(reviewDurations) > 0 {
+		sort.Slice(reviewDurations, func(i, j int) bool { return reviewDurations[i] < reviewDurations[j] })
+		mid := len(reviewDurations) / 2
+		if len(reviewDurations)%2 == 0 {
+			medianReviewTime = (reviewDurations[mid-1] + reviewDurations[mid]) / 2
+		} else {
+			medianReviewTime = reviewDurations[mid]
+		}
+	}
 
 	avgMergeWaitTime := time.Duration(0)
 	if mergedCount > 0 {
@@ -341,6 +400,62 @@ func CalculateStats(prs []github.PullRequest) Stats {
 		}
 	}
 
+	avgReopenToMerge := time.Duration(0)
+	medianReopenToMerge := time.Duration(0)
+	if len(reopenToMergeDurations) > 0 {
+		var total time.Duration
+		for _, d := range reopenToMergeDurations {
+			total += d
+		}
+		avgReopenToMerge = total / time.Duration(len(reopenToMergeDurations))
+
+		sort.Slice(reopenToMergeDurations, func(i, j int) bool { return reopenToMergeDurations[i] < reopenToMergeDurations[j] })
+		mid := len(reopenToMergeDurations) / 2
+		if len(reopenToMergeDurations)%2 == 0 {
+			medianReopenToMerge = (reopenToMergeDurations[mid-1] + reopenToMergeDurations[mid]) / 2
+		} else {
+			medianReopenToMerge = reopenToMergeDurations[mid]
+		}
+	}
+
+	// Hotfix after release durations
+	if len(releaseMergeTimes) > 0 {
+		sort.Slice(releaseMergeTimes, func(i, j int) bool { return releaseMergeTimes[i].Before(releaseMergeTimes[j]) })
+	}
+	if len(hotfixRecords) > 0 {
+		for _, h := range hotfixRecords {
+			idx := sort.Search(len(releaseMergeTimes), func(i int) bool {
+				return releaseMergeTimes[i].After(h.mergedAt) || releaseMergeTimes[i].Equal(h.mergedAt)
+			})
+			if idx == 0 {
+				hotfixWithoutRelease++
+				continue
+			}
+			prevRelease := releaseMergeTimes[idx-1]
+			if prevRelease.Before(h.mergedAt) {
+				hotfixDurations = append(hotfixDurations, h.mergedAt.Sub(prevRelease))
+			}
+		}
+	}
+
+	avgHotfixAfterRelease := time.Duration(0)
+	medianHotfixAfterRelease := time.Duration(0)
+	if len(hotfixDurations) > 0 {
+		var total time.Duration
+		for _, d := range hotfixDurations {
+			total += d
+		}
+		avgHotfixAfterRelease = total / time.Duration(len(hotfixDurations))
+
+		sort.Slice(hotfixDurations, func(i, j int) bool { return hotfixDurations[i] < hotfixDurations[j] })
+		mid := len(hotfixDurations) / 2
+		if len(hotfixDurations)%2 == 0 {
+			medianHotfixAfterRelease = (hotfixDurations[mid-1] + hotfixDurations[mid]) / 2
+		} else {
+			medianHotfixAfterRelease = hotfixDurations[mid]
+		}
+	}
+
 	avgCommitsPerPR := 0.0
 	if numPRs > 0 {
 		avgCommitsPerPR = float64(totalCommits) / numPRs
@@ -366,6 +481,11 @@ func CalculateStats(prs []github.PullRequest) Stats {
 		for k, v := range mergeTypeCounts {
 			mergeTypeTrend[k] = float64(v) / float64(mergedCount) * 100.0
 		}
+	}
+
+	reopenRate := 0.0
+	if len(prs) > 0 {
+		reopenRate = float64(reopenedPRs) / float64(len(prs)) * 100.0
 	}
 
 	// Calculate commit frequency per week (approximated by PR frequency since commit data is complex to fetch)
@@ -465,26 +585,37 @@ func CalculateStats(prs []github.PullRequest) Stats {
 	}
 
 	return Stats{
-		AverageLeadTime:        avgLeadTime,
-		MedianLeadTime:         medianLeadTime,
-		MergedPRs:              mergedCount,
-		TotalPRs:               len(prs),
-		AverageFilesChanged:    avgFilesChanged,
-		AverageAdditions:       avgAdditions,
-		AverageDeletions:       avgDeletions,
-		AverageReviewTime:      avgReviewTime,
-		AverageMergeWaitTime:   avgMergeWaitTime,
-		MedianMergeWaitTime:    medianMergeWaitTime,
-		AverageApprovalToMerge: avgApprovalToMerge,
-		MedianApprovalToMerge:  medianApprovalToMerge,
-		AverageCommitToPRTime:  avgCommitToPRTime,
-		AverageCommitsPerPR:    avgCommitsPerPR,
-		ForcePushRate:          0.0, // Cannot accurately calculate with current data
-		WIPPRCount:             openPRs,
-		AverageReviewersPerPR:  avgReviewersPerPR,
-		SelfMergeRate:          selfMergeRate,
-		MergeTypeTrend:         mergeTypeTrend,
-		CommitFrequencyPerWeek: commitFrequencyPerWeek,
+		AverageLeadTime:             avgLeadTime,
+		MedianLeadTime:              medianLeadTime,
+		MergedPRs:                   mergedCount,
+		TotalPRs:                    len(prs),
+		AverageFilesChanged:         avgFilesChanged,
+		AverageAdditions:            avgAdditions,
+		AverageDeletions:            avgDeletions,
+		AverageReviewTime:           avgReviewTime,
+		MedianReviewTime:            medianReviewTime,
+		AverageMergeWaitTime:        avgMergeWaitTime,
+		MedianMergeWaitTime:         medianMergeWaitTime,
+		AverageApprovalToMerge:      avgApprovalToMerge,
+		MedianApprovalToMerge:       medianApprovalToMerge,
+		AverageReopenToMerge:        avgReopenToMerge,
+		MedianReopenToMerge:         medianReopenToMerge,
+		HotfixMerges:                hotfixMerges,
+		AverageHotfixAfterRelease:   avgHotfixAfterRelease,
+		MedianHotfixAfterRelease:    medianHotfixAfterRelease,
+		HotfixWithoutReleaseContext: hotfixWithoutRelease,
+		AverageCommitToPRTime:       avgCommitToPRTime,
+		AverageCommitsPerPR:         avgCommitsPerPR,
+		ForcePushRate:               0.0, // Cannot accurately calculate with current data
+		WIPPRCount:                  openPRs,
+		AverageReviewersPerPR:       avgReviewersPerPR,
+		SelfMergeRate:               selfMergeRate,
+		MergeTypeTrend:              mergeTypeTrend,
+		CommitFrequencyPerWeek:      commitFrequencyPerWeek,
+		ReopenedPRs:                 reopenedPRs,
+		ReopenRate:                  reopenRate,
+		RevertLikeMerges:            revertLikeMerges,
+		ReleaseCount:                releaseCount,
 
 		// Comment timing metrics
 		AverageTimeToFirstComment: avgTimeToFirstComment,
@@ -508,6 +639,5 @@ func CalculateStats(prs []github.PullRequest) Stats {
 		MaxReviewCommentsInPR:      maxReviewComments,
 		PRsWithReviewComments:      prsWithReviewComments,
 		PRsWithoutReviewComments:   prsWithoutReviewComments,
-		ReleaseCount:               releaseCount,
 	}
 }

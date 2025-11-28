@@ -36,6 +36,27 @@ var translations = map[string]map[string]string{
 	"Releases (main/master merges)": {
 		"jp": "リリース回数（main/masterへのマージ）",
 	},
+	"Reopened PRs": {
+		"jp": "再オープンPR",
+	},
+	"Reopen Rate": {
+		"jp": "再オープン率",
+	},
+	"Revert-like Merges": {
+		"jp": "Revert系マージ数",
+	},
+	"Hotfix Merges": {
+		"jp": "Hotfixマージ数",
+	},
+	"Hotfix→Release Gap (avg/median)": {
+		"jp": "Hotfixと直近リリースの間隔（平均/中央値）",
+	},
+	"Hotfix w/o prior release": {
+		"jp": "直近リリースなしのHotfix",
+	},
+	"Stability Metrics:": {
+		"jp": "🛡️ 安定性指標:",
+	},
 	"Merge Rate": {
 		"jp": "マージ率",
 	},
@@ -53,6 +74,9 @@ var translations = map[string]map[string]string{
 	},
 	"Average Review Time": {
 		"jp": "平均レビュー開始まで",
+	},
+	"Median Review Time": {
+		"jp": "レビュー開始まで（中央値）",
 	},
 	"Review Time": {
 		"jp": "レビュー開始まで",
@@ -74,6 +98,9 @@ var translations = map[string]map[string]string{
 	},
 	"Median Approval→Merge Time": {
 		"jp": "承認→マージ中央値",
+	},
+	"Reopen→Merge Time": {
+		"jp": "再オープン→マージ時間",
 	},
 	"Lead Time": {
 		"jp": "リードタイム",

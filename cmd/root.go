@@ -163,7 +163,7 @@ func displayStatsTable(statistics stats.Stats) {
 	timingTable.Append([]string{
 		i18n.T("Review Time"),
 		formatDuration(statistics.AverageReviewTime),
-		"-",
+		formatDuration(statistics.MedianReviewTime),
 	})
 	timingTable.Append([]string{
 		i18n.T("Merge Wait Time"),
@@ -202,6 +202,22 @@ func displayStatsTable(statistics stats.Stats) {
 	collabTable.Append([]string{i18n.T("Avg Reviewers per PR"), fmt.Sprintf("%.1f", statistics.AverageReviewersPerPR)})
 	collabTable.Append([]string{i18n.T("Self-Merge Rate"), fmt.Sprintf("%.1f%%", statistics.SelfMergeRate)})
 	collabTable.Render()
+
+	// Stability / quality metrics
+	fmt.Println("\n" + i18n.T("Stability Metrics:"))
+	stabilityTable := tablewriter.NewWriter(os.Stdout)
+	stabilityTable.SetHeader([]string{i18n.T("Metric"), i18n.T("Value")})
+	stabilityTable.SetBorder(true)
+	stabilityTable.Append([]string{i18n.T("Reopened PRs"), fmt.Sprintf("%d", statistics.ReopenedPRs)})
+	stabilityTable.Append([]string{i18n.T("Reopen Rate"), fmt.Sprintf("%.1f%%", statistics.ReopenRate)})
+	stabilityTable.Append([]string{i18n.T("Reopen→Merge Time"), fmt.Sprintf("%s / %s", formatDuration(statistics.AverageReopenToMerge), formatDuration(statistics.MedianReopenToMerge))})
+	stabilityTable.Append([]string{i18n.T("Revert-like Merges"), fmt.Sprintf("%d", statistics.RevertLikeMerges)})
+	stabilityTable.Append([]string{i18n.T("Hotfix Merges"), fmt.Sprintf("%d", statistics.HotfixMerges)})
+	stabilityTable.Append([]string{i18n.T("Hotfix→Release Gap (avg/median)"), fmt.Sprintf("%s avg / %s median", formatDuration(statistics.AverageHotfixAfterRelease), formatDuration(statistics.MedianHotfixAfterRelease))})
+	if statistics.HotfixWithoutReleaseContext > 0 {
+		stabilityTable.Append([]string{i18n.T("Hotfix w/o prior release"), fmt.Sprintf("%d", statistics.HotfixWithoutReleaseContext)})
+	}
+	stabilityTable.Render()
 
 	// Review Comment Analysis (focus on code review comments only)
 	if statistics.PRsWithReviewComments > 0 {
@@ -381,6 +397,9 @@ func runAnalysis() {
 
 	// Fetch comment timing data
 	processedPRs = github.FetchPRCommentTiming(repo, processedPRs)
+
+	// Fetch reopen events (for reopen rate / reopen→merge metrics)
+	processedPRs = github.FetchReopenEvents(repo, processedPRs)
 
 	// Calculate stats
 	statistics := stats.CalculateStats(processedPRs)
