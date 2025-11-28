@@ -1,15 +1,15 @@
 # visuche 🎯
 
-**visuche** (visualization check) is a powerful GitHub repository analytics tool that provides insights on PR metrics, lead times, code review patterns, and CI/CD performance.
+**visuche** (visualization check) is a powerful GitHub repository analytics tool that provides insights on PR metrics, lead times, release cadence, code review patterns, and CI/CD performance.
 
 ## ✨ Features
 
-- **📊 Pull Request Analytics**: Lead time, review time, merge patterns
-- **💬 Code Review Insights**: Review comment analysis and coverage  
+- **📊 Pull Request Analytics**: Lead time (avg/median), review time, merge wait, approval→merge
+- **🚀 Release Cadence**: Counts merges into `main/master` as releases (bots/Dependabot excluded)
+- **💬 Code Review Insights**: Review comments + approvals are counted for coverage/quality
 - **🚀 CI/CD Performance**: GitHub Actions workflow analysis
-- **📈 DORA Metrics**: Lead time, deployment frequency tracking
-- **🎨 Beautiful TUI**: Clean, readable terminal output
-- **⚡ Fast & Efficient**: Parallel processing and smart sampling
+- **🌐 Bilingual Output**: `--lang en|jp` / `--jp` for Japanese output
+- **⚡ Fast & Efficient**: Parallel fetching, chunked date ranges, smart sampling
 
 ## 🚀 Quick Start
 
@@ -19,6 +19,9 @@ visuche
 
 # Analyze specific repository
 visuche --repo owner/repo --since 2024-01-01 --until 2024-12-31
+
+# Japanese output
+visuche --repo owner/repo --since 2024-01-01 --until 2024-12-31 --jp
 
 # Analyze GitHub Actions
 visuche actions --repo owner/repo --since 2024-01-01
@@ -74,14 +77,17 @@ The install script will automatically handle dependencies, but you can install m
 ===================================================
 
 🔢 Basic Metrics:
-| Total PRs  | 134 |
-| Merged PRs | 132 |
-| Merge Rate | 98.5% |
+| Total PRs                     | 134 |
+| Merged PRs                    | 132 |
+| Releases (main/master merges) | 120 |
+| Merge Rate                    | 98.5% |
 
 ⏱️ Timing Metrics:
-| Average Lead Time       | 10h 28m  |
-| Median Lead Time        | 24m      |
-| Average Review Time     | 2h 47m   |
+| METRIC                 | AVERAGE | MEDIAN |
+| Lead Time              | 10h28m  | 24m    |
+| Review Time            | 2h47m   | -      |
+| Merge Wait Time        | 13h41m  | 5h     |
+| Approval→Merge Time    | 6h12m   | 2h     |
 
 💬 Code Review Analysis:
 | Review Comments per PR | 0.2 | 0.0 | 8 |
@@ -119,6 +125,8 @@ visuche [flags]
 - `--until string`: Analyze PRs until date (YYYY-MM-DD)
 - `--author string`: Filter by author username
 - `--label string`: Filter by label name
+- `--lang string`: `en` (default) or `jp` for Japanese output
+- `--jp`: Shortcut for `--lang jp`
 
 ### GitHub Actions Analysis
 
