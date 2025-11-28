@@ -7,6 +7,7 @@ import (
 	"time"
 	"visuche/internal/actions"
 	"visuche/internal/git"
+	"visuche/internal/i18n"
 
 	"github.com/manifoldco/promptui"
 	"github.com/olekukonko/tablewriter"
@@ -30,7 +31,7 @@ func init() {
 }
 
 func runActionsAnalysis() {
-	fmt.Println("🔧 GitHub Actions Analysis")
+	fmt.Println(i18n.T("🔧 GitHub Actions Analysis"))
 	fmt.Println("=" + strings.Repeat("=", 50))
 
 	// Get repository
@@ -46,14 +47,14 @@ func runActionsAnalysis() {
 		now := time.Now()
 		since = now.AddDate(0, -1, 0).Format("2006-01-02")
 		until = now.Format("2006-01-02")
-		fmt.Printf("📅 Using default date range: %s to %s\n", since, until)
+		fmt.Printf(i18n.Sprintf("📅 Using default date range: %s to %s\n"), since, until)
 	}
 
-	fmt.Printf("✅ Analyzing repository: %s\n", repo)
-	fmt.Printf("📊 Period: %s to %s\n", since, until)
+	fmt.Printf(i18n.Sprintf("✅ Analyzing repository: %s\n"), repo)
+	fmt.Printf(i18n.Sprintf("📊 Period: %s to %s\n"), since, until)
 
 	// Fetch workflow runs
-	fmt.Println("🔄 Fetching workflow runs...")
+	fmt.Println(i18n.T("🔄 Fetching workflow runs..."))
 	runs, err := actions.FetchWorkflowRuns(repo, since, until)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error fetching workflow runs: %v\n", err)
@@ -61,7 +62,7 @@ func runActionsAnalysis() {
 	}
 
 	if len(runs) == 0 {
-		fmt.Println("⚠️  No workflow runs found in the specified period")
+		fmt.Println(i18n.T("⚠️  No workflow runs found in the specified period"))
 		return
 	}
 
@@ -124,30 +125,30 @@ func getActionsRepo() (string, error) {
 }
 
 func displayActionsAnalytics(analytics actions.WorkflowAnalytics) {
-	fmt.Println("\n🎯 GitHub Actions Analytics")
+	fmt.Println("\n" + i18n.T("🎯 GitHub Actions Analytics"))
 	fmt.Println("=" + strings.Repeat("=", 50))
 
 	// Summary Statistics Table
-	fmt.Println("\n📊 Summary Statistics:")
+	fmt.Println("\n" + i18n.T("📊 Summary Statistics:"))
 	summaryTable := tablewriter.NewWriter(os.Stdout)
-	summaryTable.SetHeader([]string{"Metric", "Value"})
+	summaryTable.SetHeader([]string{i18n.T("Metric"), i18n.T("Value")})
 	summaryTable.SetBorder(true)
 
 	successRate := float64(analytics.TotalSuccesses) / float64(analytics.TotalRuns) * 100
 	avgDuration := time.Duration(analytics.AverageDurationMs) * time.Millisecond
 
-	summaryTable.Append([]string{"Total Runs", fmt.Sprintf("%d", analytics.TotalRuns)})
-	summaryTable.Append([]string{"Successful Runs", fmt.Sprintf("%d", analytics.TotalSuccesses)})
-	summaryTable.Append([]string{"Failed Runs", fmt.Sprintf("%d", analytics.TotalFailures)})
-	summaryTable.Append([]string{"Success Rate", fmt.Sprintf("%.1f%%", successRate)})
-	summaryTable.Append([]string{"Avg Duration", formatDuration(avgDuration)})
+	summaryTable.Append([]string{i18n.T("Total Runs"), fmt.Sprintf("%d", analytics.TotalRuns)})
+	summaryTable.Append([]string{i18n.T("Successful Runs"), fmt.Sprintf("%d", analytics.TotalSuccesses)})
+	summaryTable.Append([]string{i18n.T("Failed Runs"), fmt.Sprintf("%d", analytics.TotalFailures)})
+	summaryTable.Append([]string{i18n.T("Success Rate"), fmt.Sprintf("%.1f%%", successRate)})
+	summaryTable.Append([]string{i18n.T("Avg Duration"), formatDuration(avgDuration)})
 	summaryTable.Render()
 
 	// Workflow Breakdown Table
 	if len(analytics.WorkflowStats) > 0 {
-		fmt.Println("\n🔄 Workflow Breakdown:")
+		fmt.Println("\n" + i18n.T("🔄 Workflow Breakdown:"))
 		workflowTable := tablewriter.NewWriter(os.Stdout)
-		workflowTable.SetHeader([]string{"Workflow", "Runs", "Success", "Failed", "Success Rate", "Avg Duration"})
+		workflowTable.SetHeader([]string{i18n.T("Workflow"), i18n.T("Runs"), i18n.T("Success"), i18n.T("Failed"), i18n.T("Success Rate"), i18n.T("Avg Duration")})
 		workflowTable.SetBorder(true)
 
 		for workflowName, stats := range analytics.WorkflowStats {
@@ -168,9 +169,9 @@ func displayActionsAnalytics(analytics actions.WorkflowAnalytics) {
 
 	// Event Trigger Analysis
 	if len(analytics.EventStats) > 0 {
-		fmt.Println("\n⚡ Trigger Event Analysis:")
+		fmt.Println("\n" + i18n.T("⚡ Trigger Event Analysis:"))
 		eventTable := tablewriter.NewWriter(os.Stdout)
-		eventTable.SetHeader([]string{"Event", "Runs", "Success Rate"})
+		eventTable.SetHeader([]string{i18n.T("Event"), i18n.T("Runs"), i18n.T("Success Rate")})
 		eventTable.SetBorder(true)
 
 		for event, stats := range analytics.EventStats {
@@ -186,27 +187,27 @@ func displayActionsAnalytics(analytics actions.WorkflowAnalytics) {
 }
 
 func displayFailureDetails(failures []actions.FailureDetail) {
-	fmt.Println("\n❌ Failure Analysis:")
+	fmt.Println("\n" + i18n.T("❌ Failure Analysis:"))
 	fmt.Println("=" + strings.Repeat("=", 50))
 
 	for i, failure := range failures {
 		if i >= 10 { // Limit to first 10 failures
-			fmt.Printf("\n... and %d more failures\n", len(failures)-10)
+			fmt.Printf(i18n.Sprintf("\n... and %d more failures\n", len(failures)-10))
 			break
 		}
 
-		fmt.Printf("\n🔴 Failure #%d:\n", i+1)
-		fmt.Printf("  Workflow: %s\n", failure.WorkflowName)
-		fmt.Printf("  Run: %s\n", failure.DisplayTitle)
-		fmt.Printf("  Date: %s\n", failure.CreatedAt.Format("2006-01-02 15:04"))
-		fmt.Printf("  Duration: %s\n", formatDuration(failure.Duration))
-		
+		fmt.Printf("\n" + i18n.Sprintf("🔴 Failure #%d:", i+1) + "\n")
+		fmt.Printf(i18n.Sprintf("  Workflow: %s\n", failure.WorkflowName))
+		fmt.Printf(i18n.Sprintf("  Run: %s\n", failure.DisplayTitle))
+		fmt.Printf(i18n.Sprintf("  Date: %s\n", failure.CreatedAt.Format("2006-01-02 15:04")))
+		fmt.Printf(i18n.Sprintf("  Duration: %s\n", formatDuration(failure.Duration)))
+
 		if failure.FailedJob != "" {
-			fmt.Printf("  Failed Job: %s\n", failure.FailedJob)
+			fmt.Printf(i18n.Sprintf("  Failed Job: %s\n", failure.FailedJob))
 		}
 		if failure.FailedStep != "" {
-			fmt.Printf("  Failed Step: %s\n", failure.FailedStep)
+			fmt.Printf(i18n.Sprintf("  Failed Step: %s\n", failure.FailedStep))
 		}
-		fmt.Printf("  URL: %s\n", failure.URL)
+		fmt.Printf(i18n.Sprintf("  URL: %s\n", failure.URL))
 	}
 }
